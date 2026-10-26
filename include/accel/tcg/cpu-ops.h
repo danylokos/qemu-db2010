@@ -94,6 +94,11 @@ struct TCGCPUOps {
     void (*restore_state_to_opc)(CPUState *cpu, const TranslationBlock *tb,
                                  const uint64_t *data);
 
+    /* Optional board validation of an architectural I/O access before native
+     * MMIO fragmentation/effects. Called only on the MMIO slow path. */
+    void (*validate_io)(CPUState *cpu, vaddr address, unsigned size,
+                        bool write, uint64_t value, uintptr_t retaddr);
+
     /** @cpu_exec_enter: Callback for cpu_exec preparation */
     void (*cpu_exec_enter)(CPUState *cpu);
     /** @cpu_exec_exit: Callback for cpu_exec cleanup */

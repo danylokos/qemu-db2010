@@ -6,6 +6,11 @@
 
 ICountMode use_icount = ICOUNT_DISABLED;
 
+bool icount_align_enabled(void)
+{
+    return false;
+}
+
 bool icount_configure(QemuOpts *opts, Error **errp)
 {
     /* signal error */

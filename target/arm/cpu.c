@@ -42,6 +42,7 @@
 #include "hw/intc/arm_gicv5_stream.h"
 #ifdef CONFIG_TCG
 #include "hw/intc/armv7m_nvic.h"
+#include "accel/tcg/cpu-loop.h"
 #endif /* CONFIG_TCG */
 #endif /* !CONFIG_USER_ONLY */
 #include "system/tcg.h"
@@ -2583,6 +2584,26 @@ static vaddr aprofile_pointer_wrap(CPUState *cs, int mmu_idx,
 }
 #endif /* !CONFIG_USER_ONLY */
 
+#ifndef CONFIG_USER_ONLY
+static void arm_board_validate_io(CPUState *cs, vaddr address, unsigned size,
+                                   bool write, uint64_t value, uintptr_t retaddr)
+{
+    CPUARMState *env = cpu_env(cs);
+    const ARMBoardHooks *hooks = env->board_hooks;
+    if (hooks && !hooks->research_guards && hooks->io_access) {
+        uint64_t data[3];
+        uint32_t saved_pc = env->regs[15];
+        /* Read the current PC without restoring/refunding the executing TB. */
+        if (cpu_unwind_state_data(cs, retaddr, data)) {
+            env->regs[15] = (env->regs[15] & TARGET_PAGE_MASK) | data[0];
+        }
+        hooks->io_access(hooks->opaque, env, address, size, write, value, retaddr);
+        /* The TB still owns its PC-relative synchronization baseline. */
+        env->regs[15] = saved_pc;
+    }
+}
+#endif
+
 static const TCGCPUOps arm_tcg_ops = {
     .mttcg_supported = true,
     /* ARM processors have a weak memory model */
@@ -2601,6 +2622,7 @@ static const TCGCPUOps arm_tcg_ops = {
     .record_sigbus = arm_cpu_record_sigbus,
     .untagged_addr = aarch64_untagged_addr,
 #else
+    .validate_io = arm_board_validate_io,
     .tlb_fill_align = arm_cpu_tlb_fill_align,
     .pointer_wrap = aprofile_pointer_wrap,
     .cpu_exec_interrupt = arm_cpu_exec_interrupt,

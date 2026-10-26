@@ -6355,7 +6355,9 @@ void register_cp_regs_for_features(ARMCPU *cpu)
     if (tcg_enabled()) {
         define_tlb_insn_regs(cpu);
         define_at_insn_regs(cpu);
-        define_gicv5_cpuif_regs(cpu);
+        if (cpu_isar_feature(aa64_gcie, cpu)) {
+            define_gicv5_cpuif_regs(cpu);
+        }
     }
 #endif
 
@@ -9206,6 +9208,12 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         return; /* Never happens.  Keep compiler happy.  */
     }
 
+    /* CPSR.A is an ARMv6 addition (ARM ARM A2.5). ARMv5 exception entry
+     * must not introduce the imprecise-abort mask into reserved PSR bits. */
+    if (!arm_feature(env, ARM_FEATURE_V6)) {
+        mask &= ~CPSR_A;
+    }
+
     if (new_mode == ARM_CPU_MODE_MON) {
         addr += env->cp15.mvbar;
     } else if (A32_BANKED_CURRENT_REG_GET(env, sctlr) & SCTLR_V) {
@@ -9225,6 +9233,15 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         env->cp15.scr_el3 &= ~SCR_NS;
     }
 
+    if (env->board_hooks && env->board_hooks->exception) {
+        env->board_hooks->exception(env->board_hooks->opaque, env,
+                                   cs->exception_index, addr);
+    }
+    if (env->research_hooks && env->research_hooks->exception &&
+        (!env->board_hooks || env->board_hooks->research_guards)) {
+        env->research_hooks->exception(env->research_hooks->opaque, env,
+                                      cs->exception_index, addr);
+    }
     take_aarch32_exception(env, new_mode, mask, offset, addr);
 }
 

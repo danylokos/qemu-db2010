@@ -2284,6 +2284,20 @@ static uint64_t do_ld_8(CPUState *cpu, MMULookupPageData *p, int mmu_idx,
     return ret;
 }
 
+static void validate_board_io(CPUState *cpu, MMULookupLocals *l,
+                               bool crosspage, vaddr address, unsigned size,
+                               bool write, uint64_t value,
+                               MMUAccessType type, uintptr_t ra)
+{
+    if (type != MMU_INST_FETCH && cpu->cc->tcg_ops->validate_io &&
+        ((l->page[0].flags | (crosspage ? l->page[1].flags : 0)) & TLB_MMIO)) {
+        /* Like io_prepare(): retry a single I/O instruction before doing any
+         * validation or effects, so PC and virtual-clock reads are safe. */
+        if (!cpu->neg.can_do_io) { cpu_io_recompile(cpu, ra); }
+        cpu->cc->tcg_ops->validate_io(cpu, address, size, write, value, ra);
+    }
+}
+
 static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
                           uintptr_t ra, MMUAccessType access_type)
 {
@@ -2292,6 +2306,7 @@ static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 1, false, 0, access_type, ra);
     tcg_debug_assert(!crosspage);
 
     return do_ld_1(cpu, &l.page[0], l.mmu_idx, access_type, ra);
@@ -2307,6 +2322,7 @@ static uint16_t do_ld2_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 2, false, 0, access_type, ra);
     if (likely(!crosspage)) {
         return do_ld_2(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);
     }
@@ -2331,6 +2347,7 @@ static uint32_t do_ld4_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 4, false, 0, access_type, ra);
     if (likely(!crosspage)) {
         return do_ld_4(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);
     }
@@ -2352,6 +2369,7 @@ static uint64_t do_ld8_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 8, false, 0, access_type, ra);
     if (likely(!crosspage)) {
         return do_ld_8(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);
     }
@@ -2693,6 +2711,7 @@ static void do_st1_mmu(CPUState *cpu, vaddr addr, uint8_t val,
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 1, true, val, MMU_DATA_STORE, ra);
     tcg_debug_assert(!crosspage);
 
     do_st_1(cpu, &l.page[0], val, l.mmu_idx, ra);
@@ -2707,6 +2726,7 @@ static void do_st2_mmu(CPUState *cpu, vaddr addr, uint16_t val,
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 2, true, val, MMU_DATA_STORE, ra);
     if (likely(!crosspage)) {
         do_st_2(cpu, &l.page[0], val, l.mmu_idx, l.memop, ra);
         return;
@@ -2729,6 +2749,7 @@ static void do_st4_mmu(CPUState *cpu, vaddr addr, uint32_t val,
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 4, true, val, MMU_DATA_STORE, ra);
     if (likely(!crosspage)) {
         do_st_4(cpu, &l.page[0], val, l.mmu_idx, l.memop, ra);
         return;
@@ -2750,6 +2771,7 @@ static void do_st8_mmu(CPUState *cpu, vaddr addr, uint64_t val,
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
+    validate_board_io(cpu, &l, crosspage, addr, 8, true, val, MMU_DATA_STORE, ra);
     if (likely(!crosspage)) {
         do_st_8(cpu, &l.page[0], val, l.mmu_idx, l.memop, ra);
         return;

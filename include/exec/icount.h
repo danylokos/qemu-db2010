@@ -56,6 +56,9 @@ int64_t icount_get(void);
  */
 int64_t icount_to_ns(int64_t icount);
 
+/* Whether fixed-icount execution is paced against host time. */
+bool icount_align_enabled(void);
+
 /**
  * icount_configure: configure the icount options, including "shift"
  * @opts: Options to parse

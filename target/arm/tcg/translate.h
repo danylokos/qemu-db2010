@@ -38,6 +38,7 @@ typedef struct DisasDelayException {
 
 typedef struct DisasContext {
     DisasContextBase base;
+    bool research_hooks;
     const ARMISARegisters *isar;
     DisasDelayException *delay_excp_list;
 

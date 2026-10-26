@@ -1,0 +1,21 @@
+Pinned host decoder for the opt-in DB2010 startup audio service.
+
+Upstream: https://github.com/lieff/minimp3
+Revision: ea99364f61c14656440e8d77e9c233ccf3124633
+Acquired: 2026-10-20 (UTC)
+License: unchanged upstream CC0-1.0, retained in LICENSE.
+
+minimp3.h SHA-256:
+57e437c5c1f0e8b243885d3929c8973b5e6c778451e0100ab4251d19915cb3ad
+LICENSE SHA-256:
+6a1ee543e5282cd9061881edf462e6fdab181f328da71fc2c9a6950a80e94d01
+
+Files are unchanged upstream bytes. db2010-audio-codec.c selects scalar
+MINIMP3_NO_SIMD and MINIMP3_ONLY_MP3, guards the exercised MPEG1/L3 320kbps,
+48kHz stereo format, and decodes complete 960-byte frames across guest packets.
+This is host processing behind recovered ARM-visible contracts; no DSP ISA,
+handset filter, analog route or acoustic equivalence is claimed.
+
+Decoder history is explicitly serialized field by field in native checkpoint8;
+no host pointer or raw padded C structure is stored. Deterministic comparisons
+require the sealed matching engine/build. Live presentation is separate work.

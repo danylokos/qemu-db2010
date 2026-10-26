@@ -30,6 +30,32 @@
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
 
+void HELPER(research_instruction)(CPUARMState *env, uint32_t size,
+                                  uint32_t instruction)
+{
+    const ARMResearchHooks *hooks = env->research_hooks;
+    env->research_retaddr = GETPC();
+    hooks->instruction(hooks->opaque, env, env->regs[15], size, instruction);
+    env->research_retaddr = 0;
+}
+
+void HELPER(board_instruction)(CPUARMState *env, uint32_t size, uint32_t instruction)
+{
+    const ARMBoardHooks *hooks = env->board_hooks;
+    env->research_retaddr = GETPC();
+    hooks->instruction(hooks->opaque, env, size, instruction);
+    env->research_retaddr = 0;
+}
+
+void HELPER(research_memory)(CPUARMState *env, uint32_t address,
+                            uint32_t size, uint32_t operation, uint32_t value)
+{
+    const ARMResearchHooks *hooks = env->research_hooks;
+    env->research_retaddr = GETPC();
+    hooks->memory(hooks->opaque, env, address, size, operation, value);
+    env->research_retaddr = 0;
+}
+
 int exception_target_el(CPUARMState *env)
 {
     int target_el = MAX(1, arm_current_el(env));
@@ -384,6 +410,17 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     CPUState *cs = env_cpu(env);
     uint32_t excp;
     int target_el = check_wfx_trap(env, false, &excp);
+
+    if (!target_el && env->research_hooks && env->research_hooks->wfi &&
+        (!env->board_hooks || env->board_hooks->research_guards)) {
+        env->research_retaddr = GETPC();
+        env->research_hooks->wfi(env->research_hooks->opaque, env, insn_len);
+        env->research_retaddr = 0;
+    }
+
+    if (!target_el && env->board_hooks && env->board_hooks->wfi) {
+        env->board_hooks->wfi(env->board_hooks->opaque, env, insn_len);
+    }
 
     if (cpu_has_work(cs)) {
         /* Don't bother to go into our "low power state" if

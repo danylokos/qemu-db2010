@@ -50,6 +50,11 @@ static bool icount_sleep = true;
 
 bool icount_align_option;
 
+bool icount_align_enabled(void)
+{
+    return icount_align_option;
+}
+
 /* Do not count executed instructions */
 ICountMode use_icount = ICOUNT_DISABLED;
 
@@ -232,6 +237,7 @@ static void icount_warp_rt(void)
 {
     unsigned seq;
     int64_t warp_start;
+    int64_t deadline;
 
     /*
      * The icount_warp_timer is rescheduled soon after vm_clock_warp_start
@@ -246,6 +252,13 @@ static void icount_warp_rt(void)
         return;
     }
 
+    /* Read the virtual deadline before taking the clock's write lock: the
+     * deadline query reads icount through the same seqlock. A late host wake
+     * must not warp past a guest timer and coalesce its following periods.
+     */
+    deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                         ~QEMU_TIMER_ATTR_EXTERNAL);
+
     seqlock_write_lock(&timers_state.vm_clock_seqlock,
                        &timers_state.vm_clock_lock);
     if (runstate_is_running()) {
@@ -254,6 +267,13 @@ static void icount_warp_rt(void)
         int64_t warp_delta;
 
         warp_delta = clock - timers_state.vm_clock_warp_start;
+        if (icount_align_option) {
+            /* Retain host time left over by a deadline-bounded warp. */
+            warp_delta = MAX(warp_delta, clock - icount_get_locked());
+        }
+        if (deadline >= 0) {
+            warp_delta = MIN(warp_delta, deadline);
+        }
         if (icount_enabled() == ICOUNT_ADAPTATIVE) {
             /*
              * In adaptive mode, do not let QEMU_CLOCK_VIRTUAL run too far
@@ -366,6 +386,15 @@ void icount_start_warp_timer(void)
                                  &timers_state.vm_clock_lock);
             qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
         } else {
+            int64_t sleep_deadline = deadline;
+
+            if (icount_align_option) {
+                int64_t lag = clock - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+                if (lag > 0) {
+                    sleep_deadline = MAX(0, deadline - lag);
+                }
+            }
             /*
              * We do stop VCPUs and only advance QEMU_CLOCK_VIRTUAL after some
              * "real" time, (related to the time left until the next event) has
@@ -383,7 +412,7 @@ void icount_start_warp_timer(void)
             seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                                  &timers_state.vm_clock_lock);
             timer_mod_anticipate(timers_state.icount_warp_timer,
-                                 clock + deadline);
+                                 clock + sleep_deadline);
         }
     } else if (deadline == 0) {
         qemu_clock_notify(QEMU_CLOCK_VIRTUAL);

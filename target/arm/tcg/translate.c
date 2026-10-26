@@ -931,6 +931,12 @@ void gen_aa32_ld_internal_i32(DisasContext *s, TCGv_i32 val,
                               TCGv_i32 a32, int index, MemOp opc)
 {
     TCGv_va addr = gen_aa32_addr(s, a32, opc);
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(0),
+            tcg_constant_i32(0));
+    }
     tcg_gen_qemu_ld_i32(val, addr, index, opc);
 }
 
@@ -938,13 +944,30 @@ void gen_aa32_st_internal_i32(DisasContext *s, TCGv_i32 val,
                               TCGv_i32 a32, int index, MemOp opc)
 {
     TCGv_va addr = gen_aa32_addr(s, a32, opc);
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(1), val);
+    }
     tcg_gen_qemu_st_i32(val, addr, index, opc);
+    if (s->research_hooks) {
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(2),
+            tcg_constant_i32(0));
+    }
 }
 
 void gen_aa32_ld_internal_i64(DisasContext *s, TCGv_i64 val,
                               TCGv_i32 a32, int index, MemOp opc)
 {
     TCGv_va addr = gen_aa32_addr(s, a32, opc);
+
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(0),
+            tcg_constant_i32(0));
+    }
 
     tcg_gen_qemu_ld_i64(val, addr, index, opc);
 
@@ -959,6 +982,13 @@ void gen_aa32_st_internal_i64(DisasContext *s, TCGv_i64 val,
 {
     TCGv_va addr = gen_aa32_addr(s, a32, opc);
 
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(1),
+            tcg_constant_i32(0));
+    }
+
     /* Not needed for user-mode BE32, where we use MO_BE instead.  */
     if (!IS_USER_ONLY && s->sctlr_b && (opc & MO_SIZE) == MO_64) {
         TCGv_i64 tmp = tcg_temp_new_i64();
@@ -966,6 +996,11 @@ void gen_aa32_st_internal_i64(DisasContext *s, TCGv_i64 val,
         tcg_gen_qemu_st_i64(tmp, addr, index, opc);
     } else {
         tcg_gen_qemu_st_i64(val, addr, index, opc);
+    }
+    if (s->research_hooks) {
+        gen_helper_research_memory(tcg_env, a32,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(2),
+            tcg_constant_i32(0));
     }
 }
 
@@ -3844,6 +3879,11 @@ static void do_ldrd_load(DisasContext *s, TCGv_i32 addr, int rt, int rt2)
     TCGv_i32 tmp = tcg_temp_new_i32();
     TCGv_i32 tmp2 = tcg_temp_new_i32();
 
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, addr, tcg_constant_i32(8),
+                                   tcg_constant_i32(0), tcg_constant_i32(0));
+    }
     tcg_gen_qemu_ld_i64(t64, taddr, mem_idx, opc);
     if (s->be_data == MO_BE) {
         tcg_gen_extr_i64_i32(tmp2, tmp, t64);
@@ -3904,7 +3944,16 @@ static void do_strd_store(DisasContext *s, TCGv_i32 addr, int rt, int rt2)
     } else {
         tcg_gen_concat_i32_i64(t64, t1, t2);
     }
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, addr, tcg_constant_i32(8),
+                                   tcg_constant_i32(1), t1);
+    }
     tcg_gen_qemu_st_i64(t64, taddr, mem_idx, opc);
+    if (s->research_hooks) {
+        gen_helper_research_memory(tcg_env, addr, tcg_constant_i32(8),
+                                   tcg_constant_i32(2), tcg_constant_i32(0));
+    }
 }
 
 static bool trans_STRD_rr(DisasContext *s, arg_ldst_rr *a)
@@ -4122,7 +4171,20 @@ static bool op_swp(DisasContext *s, arg_SWP *a, MemOp opc)
     taddr = gen_aa32_addr(s, addr, opc);
 
     tmp = load_reg(s, a->rt2);
+    if (s->research_hooks) {
+        translator_io_start(&s->base);
+        gen_helper_research_memory(tcg_env, addr,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(0),
+            tcg_constant_i32(0));
+        gen_helper_research_memory(tcg_env, addr,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(1), tmp);
+    }
     tcg_gen_atomic_xchg_i32(tmp, taddr, tmp, get_mem_index(s), opc);
+    if (s->research_hooks) {
+        gen_helper_research_memory(tcg_env, addr,
+            tcg_constant_i32(1 << (opc & MO_SIZE)), tcg_constant_i32(2),
+            tcg_constant_i32(0));
+    }
 
     store_reg(s, a->rt, tmp);
     return true;
@@ -6380,6 +6442,8 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     uint32_t condexec, core_mmu_idx;
 
     dc->isar = &cpu->isar;
+    dc->research_hooks = env->research_hooks &&
+        (!env->board_hooks || env->board_hooks->research_guards);
     dc->condjmp = 0;
     dc->pc_save = dc->base.pc_first;
     dc->aarch64 = false;
@@ -6634,6 +6698,17 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
+    if (dc->research_hooks) {
+        gen_update_pc(dc, 0);
+        gen_helper_research_instruction(tcg_env, tcg_constant_i32(4),
+                                        tcg_constant_i32(insn));
+    } else if (env->board_hooks && env->board_hooks->instruction_needed &&
+               env->board_hooks->instruction_needed(env->board_hooks->opaque,
+                                                    pc, insn, false)) {
+        gen_update_pc(dc, 0);
+        translator_io_start(&dc->base);
+        gen_helper_board_instruction(tcg_env, tcg_constant_i32(4), tcg_constant_i32(insn));
+    }
     disas_arm_insn(dc, insn);
 
     arm_post_translate_insn(dc);
@@ -6718,6 +6793,18 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
     dc->base.pc_next = pc;
     dc->insn = insn;
+    if (dc->research_hooks) {
+        gen_update_pc(dc, 0);
+        gen_helper_research_instruction(tcg_env,
+            tcg_constant_i32(is_16bit ? 2 : 4), tcg_constant_i32(insn));
+    } else if (env->board_hooks && env->board_hooks->instruction_needed &&
+               env->board_hooks->instruction_needed(env->board_hooks->opaque,
+                                                    dc->pc_curr, insn, true)) {
+        gen_update_pc(dc, 0);
+        translator_io_start(&dc->base);
+        gen_helper_board_instruction(tcg_env, tcg_constant_i32(is_16bit ? 2 : 4),
+                                     tcg_constant_i32(insn));
+    }
 
     if (dc->pstate_il) {
         /*

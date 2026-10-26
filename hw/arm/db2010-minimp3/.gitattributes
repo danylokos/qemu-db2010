@@ -1,0 +1,2 @@
+# Preserve the upstream license byte-for-byte, including its final blank line.
+LICENSE whitespace=-blank-at-eof

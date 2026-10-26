@@ -1,5 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 
+DEF_HELPER_3(research_instruction, void, env, i32, i32)
+DEF_HELPER_3(board_instruction, void, env, i32, i32)
+DEF_HELPER_5(research_memory, void, env, i32, i32, i32, i32)
+
 DEF_HELPER_FLAGS_1(sxtb16, TCG_CALL_NO_RWG_SE, i32, i32)
 DEF_HELPER_FLAGS_1(uxtb16, TCG_CALL_NO_RWG_SE, i32, i32)
 

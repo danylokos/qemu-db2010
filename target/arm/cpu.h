@@ -237,6 +237,35 @@ typedef enum {
     HALT_WFE
 } ARMHaltReason;
 
+struct CPUArchState;
+
+/* Functional board integration remains connected when research validation is off. */
+typedef struct ARMBoardHooks {
+    void *opaque;
+    bool research_guards;
+    bool (*instruction_needed)(void *opaque, uint32_t pc, uint32_t insn, bool thumb);
+    void (*instruction)(void *opaque, struct CPUArchState *env,
+                        unsigned size, uint32_t instruction);
+    void (*io_access)(void *opaque, struct CPUArchState *env, uint32_t address,
+                      unsigned size, bool write, uint64_t value, uintptr_t retaddr);
+    void (*exception)(void *opaque, struct CPUArchState *env,
+                      int exception_index, uint32_t vector);
+    void (*wfi)(void *opaque, struct CPUArchState *env, unsigned instruction_size);
+} ARMBoardHooks;
+
+/* Opt-in research-machine guards. Other machines generate no extra helpers. */
+typedef struct ARMResearchHooks {
+    void *opaque;
+    void (*instruction)(void *opaque, struct CPUArchState *env,
+                        uint32_t pc, unsigned size, uint32_t instruction);
+    void (*memory)(void *opaque, struct CPUArchState *env,
+                   uint32_t address, unsigned size, unsigned operation,
+                   uint32_t value);
+    void (*wfi)(void *opaque, struct CPUArchState *env, unsigned instruction_size);
+    void (*exception)(void *opaque, struct CPUArchState *env,
+                      int exception_index, uint32_t vector);
+} ARMResearchHooks;
+
 typedef struct CPUArchState {
     /* Regs for current mode.  */
     uint32_t regs[16];
@@ -773,6 +802,10 @@ typedef struct CPUArchState {
     struct {} end_reset_fields;
 
     /* Fields after this point are preserved across CPU reset. */
+
+    const ARMBoardHooks *board_hooks;
+    const ARMResearchHooks *research_hooks;
+    uintptr_t research_retaddr;
 
     /* Internal CPU feature flags.  */
     uint64_t features;
